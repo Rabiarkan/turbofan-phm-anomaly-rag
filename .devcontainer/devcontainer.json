@@ -9,8 +9,6 @@
     "PYTHONPATH": "${containerWorkspaceFolder}"
   },
   "secrets": {
-    "KAGGLE_USERNAME": { "description": "Kaggle username, used by kagglehub to download C-MAPSS" },
-    "KAGGLE_KEY":      { "description": "Kaggle API key (kaggle.com > Settings > API)" },
     "GROQ_API_KEY":    { "description": "Needed only for the RAG phase" }
   },
   "customizations": {
