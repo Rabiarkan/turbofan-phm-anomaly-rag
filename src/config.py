@@ -32,5 +32,9 @@ SENSOR_NAMES = dict(
     )
 )
 
+# Healthy window: first N cycles of each engine (deployment-realistic; no RUL used).
+HEALTHY_CYCLES = 30
+HEALTHY_CYCLES_SENSITIVITY = (20, 30, 50)
+
 for _p in (DATA_RAW, DATA_PROCESSED, RESULTS, MODELS):
     _p.mkdir(parents=True, exist_ok=True)
