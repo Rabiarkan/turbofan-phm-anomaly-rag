@@ -5,6 +5,7 @@ DATA_RAW = ROOT / "data" / "raw"
 DATA_PROCESSED = ROOT / "data" / "processed"
 RESULTS = ROOT / "results"
 MODELS = RESULTS / "models"
+SPLITS = RESULTS / "splits"
 DOCS = ROOT / "docs" / "maintenance"
 
 SEED = 42
@@ -32,9 +33,16 @@ SENSOR_NAMES = dict(
     )
 )
 
+# Chosen in notebooks/01_eda_fd001.ipynb: dropped 6 constant sensors
+# (T2, P2, epr, farB, Nf_dmd, PCNfR_dmd) and P15 (two values, no trend).
+FEATURE_SENSORS = "T24 T30 T50 P30 Nf Nc Ps30 phi NRf NRc BPR htBleed W31 W32".split()
+
 # Healthy window: first N cycles of each engine (deployment-realistic; no RUL used).
 HEALTHY_CYCLES = 30
 HEALTHY_CYCLES_SENSITIVITY = (20, 30, 50)
 
-for _p in (DATA_RAW, DATA_PROCESSED, RESULTS, MODELS):
+for _p in (DATA_RAW, DATA_PROCESSED, RESULTS, MODELS, SPLITS):
     _p.mkdir(parents=True, exist_ok=True)
+
+# Train/validation split of training engines (by unit, never by row).
+VAL_FRACTION = 0.2

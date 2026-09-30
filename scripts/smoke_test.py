@@ -88,10 +88,15 @@ def secrets():
     return ", ".join(f"{n}={'set' if os.getenv(n) else 'missing'}" for n in names)
 
 
-print(f"python {platform.python_version()} on {platform.machine()}, cpus={os.cpu_count()}")
-check("libraries", libs)
-check("torch", torch_info)
-check("lstm autoencoder", lstm_autoencoder_step)
-check("paths", paths)
-print(f"[info] secrets: {secrets()}")  # missing keys are informational, not a failure
-sys.exit(0 if ok else 1)
+def main() -> int:
+    print(f"python {platform.python_version()} on {platform.machine()}, cpus={os.cpu_count()}")
+    check("libraries", libs)
+    check("torch", torch_info)
+    check("lstm autoencoder", lstm_autoencoder_step)
+    check("paths", paths)
+    print(f"[info] secrets: {secrets()}")  # missing keys are informational, not a failure
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
