@@ -46,3 +46,18 @@ for _p in (DATA_RAW, DATA_PROCESSED, RESULTS, MODELS, SPLITS):
 
 # Train/validation split of training engines (by unit, never by row).
 VAL_FRACTION = 0.2
+
+
+# Evaluation protocol (fixed before any model is scored)
+ALARM_QUANTILE = 0.99  # threshold = this quantile of scores on val healthy cycles
+ALARM_K_CANDIDATES = (1, 2, 3, 5)  # consecutive exceedances needed; chosen on val
+NEAR_FAILURE_RUL = 30  # engines ending at RUL <= this must be detected
+# AUROC of healthy cycles vs cycles in each RUL band: how early does the score separate?
+AUROC_BANDS = ((0, 30), (30, 60), (60, 90))
+
+
+# Baselines (pre-registered settings)
+PCA_VARIANCE = 0.95  # components kept = smallest number explaining this share on fit healthy
+IFOREST_TREES = 200
+# Chosen on val after the pre-registered run (sweep 1..12, best auroc_30_60 for T2)
+PCA_TUNED_COMPONENTS = 2
