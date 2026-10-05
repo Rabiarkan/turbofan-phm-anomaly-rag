@@ -61,3 +61,16 @@ PCA_VARIANCE = 0.95  # components kept = smallest number explaining this share o
 IFOREST_TREES = 200
 # Chosen on val after the pre-registered run (sweep 1..12, best auroc_30_60 for T2)
 PCA_TUNED_COMPONENTS = 2
+
+# Window length for window-based models (window PCA, rolling mean, LSTM-AE).
+# Must fit inside the healthy window: 30 healthy cycles -> 21 healthy windows per engine.
+WINDOW = 10
+
+
+# LSTM autoencoder (pre-registered).
+LSTM_HIDDEN = 8  # bottleneck size, smaller than the 14 sensors
+LSTM_LR = 1e-3
+LSTM_BATCH = 64
+LSTM_MAX_EPOCHS = 1000  # raised from 300: cap was hit before early stopping (val-healthy loss only)
+LSTM_PATIENCE = 10  # early stopping on val-healthy reconstruction loss
+LSTM_SEEDS = (0, 1, 2)
