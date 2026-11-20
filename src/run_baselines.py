@@ -31,7 +31,16 @@ EXPERIMENTS = {
     "roll_pca_t2_tuned": (rolling_view, T2_TUNED),
 } | {f"lstm_ae_s{s}": (window_view, partial(LSTMAE, seed=s)) for s in LSTM_SEEDS}
 
-COLS = ["k", "early_alarm_rate", "detection_rate", "lead_median", "auroc_30_60", "auroc_60_90"]
+COLS = [
+    "k",
+    "early_alarm_rate",
+    "detection_rate",
+    "lead_median",
+    "fa_engine_rate",
+    "fa_per_1000",
+    "auroc_30_60",
+    "auroc_60_90",
+]
 
 
 def run(view, make, p, split: str) -> dict:
