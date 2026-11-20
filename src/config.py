@@ -7,6 +7,7 @@ RESULTS = ROOT / "results"
 MODELS = RESULTS / "models"
 SPLITS = RESULTS / "splits"
 DOCS = ROOT / "docs" / "maintenance"
+SCORES = RESULTS / "scores"
 
 SEED = 42
 
@@ -41,7 +42,11 @@ FEATURE_SENSORS = "T24 T30 T50 P30 Nf Nc Ps30 phi NRf NRc BPR htBleed W31 W32".s
 HEALTHY_CYCLES = 30
 HEALTHY_CYCLES_SENSITIVITY = (20, 30, 50)
 
-for _p in (DATA_RAW, DATA_PROCESSED, RESULTS, MODELS, SPLITS):
+ONSET_RUL = 125
+ONSET_RUL_SENSITIVITY = (100, 125, 150)
+BOOTSTRAP_B = 2000  # engine-level bootstrap resamples
+
+for _p in (DATA_RAW, DATA_PROCESSED, RESULTS, MODELS, SPLITS, SCORES):
     _p.mkdir(parents=True, exist_ok=True)
 
 # Train/validation split of training engines (by unit, never by row).
