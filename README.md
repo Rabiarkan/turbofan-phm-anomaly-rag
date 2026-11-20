@@ -4,32 +4,31 @@
 >
 > **Part 1 – Anomaly detection: complete.** Models, evaluation protocol and test results below.
 >
-> **Part 2 – RAG diagnosis assistant: planned** (design only, no code yet). See [Roadmap](#roadmap).
+> **Part 2 – RAG diagnosis assistant: in progress.** The detector is saved; deviation report,
+> retrieval and generation are next. See [Roadmap](#roadmap).
 
 Early anomaly detection on NASA C-MAPSS turbofan run-to-failure data, comparing classical
-process-monitoring methods with an LSTM autoencoder under an evaluation protocol fixed before
-the models were compared: no test-set information enters any choice (split, scaling, model
-settings, threshold or alarm rule). Part 2 will turn an alarm into diagnostic support: the
-sensors that drove the alarm will be matched with aviation maintenance documentation to suggest
-likely causes and checks, with citations.
+process-monitoring methods with an LSTM autoencoder under one evaluation protocol for all models.
+No test-set information enters any choice (split, scaling, model settings, threshold or alarm
+rule). Part 2 will match the sensors that drove an alarm with aviation maintenance documentation
+to suggest possible causes and checks, with citations.
 
-**Main result (FD001, held-out test set).** A Hotelling T² score on 2 principal components
-(chosen on validation, reported as *tuned*) alarmed on all 25 test engines that end near failure
-(RUL ≤ 30 at their last cycle), with a median lead time of 71 cycles and early alarms on 2 of 100
-engines. Its AUROC was higher than distance and Isolation Forest in the 60–90 RUL band
-(0.772 vs 0.689–0.726) and similar in the 30–60 band (0.927 vs 0.918–0.920). The pre-registered
-T² setting (95% variance, 12 of 14 components) scored below distance (0.854 vs 0.918), and
-reconstruction-error scores (PCA SPE, window PCA SPE, LSTM autoencoder) scored lower still.
-Lead times count any alarm after cycle 30, so they may include alarms before degradation onset
-(see [Limitations](#limitations)).
+**Main result (FD001, test set).** A Hotelling T² score on 2 principal components (chosen on
+validation, reported as *tuned*) alarmed on 25 of the 25 test engines that end near failure
+(RUL ≤ 30 at their last cycle), with a median lead time of 71 cycles. It alarmed early (within the
+first 30 cycles) on 2 of 100 engines and in mid-life (RUL > 125) on 2 of 88 engines, with 1.39
+alarm events per 1000 mid-life cycles. For comparison, distance and Isolation Forest had median
+lead times of 47 and 47.5 cycles, no early alarms and 0.60 and 0.79 mid-life alarm events per
+1000 cycles. Test AUROC 30–60 was 0.927 for the 2-component T², 0.918 for distance and 0.920 for
+Isolation Forest; AUROC 60–90 was 0.772, 0.689 and 0.726. No confidence intervals were computed.
 
 | Part | Status |
 |---|---|
 | Data pipeline, EDA, engine-level split | ✅ done |
 | Evaluation protocol | ✅ done |
 | Classical baselines + LSTM autoencoder | ✅ done |
-| Test evaluation (FD001) | ✅ done, run once |
-| RAG diagnosis assistant | 📝 planned |
+| Test evaluation (FD001) | ✅ done |
+| RAG diagnosis assistant | 🚧 in progress |
 | FD003 / FD004 | planned |
 
 ## Contents
@@ -52,11 +51,10 @@ labels, only the knowledge that each engine starts healthy. The task is therefor
 
 1. learn what healthy sensor behaviour looks like,
 2. score how far each new cycle is from it,
-3. raise an alarm early enough to act, without false alarms on healthy engines.
+3. raise an alarm before failure, without alarms on healthy engines.
 
-This project covers detection (is something wrong?) and, in Part 2, diagnostic support (which
-component, what to check?). It does not estimate remaining useful life (RUL); RUL is used only
-to evaluate how early alarms arrive.
+This project covers detection and, in Part 2, diagnostic support. It does not estimate remaining
+useful life (RUL); RUL is used only to evaluate when alarms arrive.
 
 ## Data
 
@@ -80,16 +78,16 @@ NASA C-MAPSS turbofan run-to-failure simulation (Saxena, Goebel, Simon, Eklund, 
 
 - **Sensor selection:** 6 sensors are constant in FD001 (T2, P2, epr, farB, Nf_dmd, PCNfR_dmd)
   and P15 takes only two values with no trend. The remaining **14 sensors** are used.
-- **Healthy window:** the first **30 cycles** of each engine. This uses no failure information,
-  so it is applicable in the field, and gives every engine equal weight. A RUL-based window
-  (e.g. RUL > 150) was rejected: it needs future knowledge, leaves 7 of 100 engines with no rows
-  and gives 2 to 211 rows to the others. Over the first 30 cycles, the average drift per sensor
-  (mean over engines) is at most 0.11 healthy standard deviations.
-- **Noise structure:** in healthy cycles, lag-1 autocorrelation is about 0 for every sensor
-  (−0.06 to 0.00), consistent with white noise.
-- **Between-engine variance:** 28–86% of healthy variance per sensor is between engines,
-  consistent with the different initial wear and manufacturing variation stated in the dataset
-  description.
+- **Healthy window:** the first **30 cycles** of each engine. It uses no failure information and
+  gives every engine the same number of rows. A RUL-based window (e.g. RUL > 150) was not used:
+  it needs the failure time, leaves 7 of 100 engines with no rows and gives 2 to 211 rows to the
+  others. Over the first 30 cycles, the average drift per sensor (mean over engines) is at most
+  0.11 healthy standard deviations.
+- **Noise structure:** in healthy cycles, lag-1 autocorrelation is between −0.06 and 0.00 for
+  every sensor.
+- **Between-engine variance:** 28–86% of healthy variance per sensor is between engines. The
+  dataset description states that engines start with different, unknown initial wear and
+  manufacturing variation.
 
 ### Evaluation protocol (`src/evaluate.py`)
 
@@ -102,18 +100,25 @@ NASA C-MAPSS turbofan run-to-failure simulation (Saxena, Goebel, Simon, Eklund, 
   LSTM autoencoder the same cycles also drive early stopping, which can bias its threshold
   downward; the size of the effect was not measured.
 - **Alarm:** score above threshold for k consecutive cycles. k is the smallest value in
-  {1, 2, 3, 5} that gives no early alarm on validation, chosen per model (single-cycle models:
-  k = 2–3; window-based models: mostly k = 5).
-- **Metrics:**
+  {1, 2, 3, 5} that gives no early alarm on validation, chosen per model.
+- **Metrics.** After the 30-cycle healthy window, an engine's life is split at RUL = 125, used as
+  a proxy for degradation onset (not a label):
   - *early alarm rate*: share of engines that alarm within their first 30 cycles,
-  - *detection rate*: share of engines ending near failure (RUL ≤ 30 at their last cycle) that
-    alarm at any cycle after cycle 30,
-  - *lead time*: RUL at that first alarm; median over the detected engines,
+  - *detection rate*: share of engines ending near failure (RUL ≤ 30 at their last cycle) with
+    the alarm on at some cycle after cycle 30 with RUL ≤ 125,
+  - *lead time*: RUL at that first cycle (at most 125); median over the detected engines,
+  - *mid-life false alarms* (cycles after cycle 30 with RUL > 125): share of engines with at
+    least one alarm event, and alarm events per 1000 cycles; an alarm event is the cycle at which
+    a streak reaches k,
   - *banded AUROC*: healthy cycles (1–30; 10–30 for window-based models) vs cycles after
-    cycle 30 with RUL in 0–30, 30–60 or 60–90. The 0–30 band is close to 1.0 for the stronger
-    models, so the earlier bands separate the methods.
-- **Test set:** evaluated once, after all models were final; threshold and k come from
-  validation.
+    cycle 30 with RUL in 0–30, 30–60 or 60–90. On test, the 0–30 band is 0.997–1.0 for five of
+    the ten models, so the tables report the 30–60 and 60–90 bands.
+
+  The earlier detection and lead definitions (any alarm after cycle 30) are kept as `legacy_*`
+  columns in the result files.
+- **Test set:** scored when all models were final (tag `part1-fd001`), and re-scored once to add
+  the RUL-125 metrics, which were committed before the re-scoring. No threshold, k or model
+  setting changed, and every earlier column was reproduced exactly.
 
 ### Models
 
@@ -140,26 +145,28 @@ NASA C-MAPSS turbofan run-to-failure simulation (Saxena, Goebel, Simon, Eklund, 
 ## Results
 
 FD001. Test detection is counted over the 25 test engines that end near failure, early alarms
-over all 100 test engines. On validation, early alarms are 0% for every model, since k is chosen
-to give none there. Lead times count any alarm after cycle 30 (see [Limitations](#limitations)).
+over all 100 test engines, mid-life false alarms over the 88 test engines with cycles after
+cycle 30 and RUL > 125. On validation, early alarms are 0% for every model, since k is chosen to
+give none there.
 
-| Model | Val AUROC 30–60 | Test AUROC 30–60 | Test AUROC 60–90 | Test detection | Test median lead | Test early alarms |
-|---|---|---|---|---|---|---|
-| PCA T², 2 components *(tuned on val)* | 0.962 | 0.927 | 0.772 | 25/25 | 71 | 2% |
-| Rolling PCA T², 2 components *(tuned on val)* | 0.963 | 0.928 | 0.779 | 24/25 | 74 | 5% |
-| Isolation Forest | 0.937 | 0.920 | 0.726 | 24/25 | 47.5 | 0% |
-| Distance | 0.928 | 0.918 | 0.689 | 24/25 | 47 | 0% |
-| Rolling distance | 0.915 | 0.907 | 0.667 | 24/25 | 46 | 2% |
-| PCA T², 95% variance | 0.891 | 0.854 | 0.674 | 21/25 | 50 | 0% |
-| LSTM autoencoder (3 seeds) | 0.804 ± 0.006 | 0.759 ± 0.012 | 0.562 ± 0.007 | 24, 22, 21 /25 | 45 ¹ | 1.7% (4, 1, 0%) |
-| Window PCA T² | 0.803 | 0.756 | 0.586 | 20/25 | 57.5 | 10% |
-| Window PCA SPE | 0.564 | 0.588 | 0.519 | 2/25 | 26.5 ² | 0% |
-| PCA SPE | 0.536 | 0.543 | 0.518 | 2/25 | 31 ² | 0% |
+| Model | Val AUROC 30–60 | Test AUROC 30–60 | Test AUROC 60–90 | Test detection | Test median lead | Test early alarms | Test mid-life false alarms (engines / per 1000 cycles) |
+|---|---|---|---|---|---|---|---|
+| PCA T², 2 components *(tuned on val)* | 0.962 | 0.927 | 0.772 | 25/25 | 71 | 2% | 2.3% / 1.39 |
+| Rolling PCA T², 2 components *(tuned on val)* | 0.963 | 0.928 | 0.779 | 24/25 | 71 | 5% | 8.0% / 1.59 |
+| Isolation Forest | 0.937 | 0.920 | 0.726 | 24/25 | 47.5 | 0% | 2.3% / 0.79 |
+| Distance | 0.928 | 0.918 | 0.689 | 24/25 | 47 | 0% | 2.3% / 0.60 |
+| Rolling distance | 0.915 | 0.907 | 0.667 | 24/25 | 46 | 2% | 3.4% / 0.79 |
+| PCA T², 95% variance | 0.891 | 0.854 | 0.674 | 21/25 | 50 | 0% | 2.3% / 0.40 |
+| LSTM autoencoder (3 seeds) | 0.804 ± 0.006 | 0.759 ± 0.012 | 0.562 ± 0.007 | 24, 21, 20 /25 | 36.8 ¹ | 1.7% (4, 1, 0%) | 9.5% / 1.79 ¹ |
+| Window PCA T² | 0.803 | 0.756 | 0.586 | 19/25 | 45 | 10% | 15.9% / 2.97 |
+| Window PCA SPE | 0.564 | 0.588 | 0.519 | 2/25 | 26.5 ² | 0% | 2.3% / 0.60 |
+| PCA SPE | 0.536 | 0.543 | 0.518 | 2/25 | 31 ² | 0% | 0% / 0 |
 
-¹ Mean of the three per-seed medians (45, 44.5, 46).
+¹ Mean over the three seeds: lead medians 41.5, 34, 35; mid-life false alarms 13.6%, 8.0%,
+6.8% of engines and 2.78, 1.39, 1.19 events per 1000 cycles.
 ² Median over the 2 detected engines only; not comparable with the other rows.
 
-Full tables, including k, thresholds and lead-time quartiles:
+Full tables, including k, thresholds, lead-time quartiles and the `legacy_*` columns:
 `results/val_results_FD001.csv`, `results/test_results_FD001.csv`.
 
 ## Findings
@@ -167,46 +174,53 @@ Full tables, including k, thresholds and lead-time quartiles:
 Observed on FD001 (20 validation, 100 test engines). Measured results are kept separate from
 their interpretation.
 
-1. **With 12 of 14 components kept, T² detected degradation and SPE did not.**
+1. **With 12 of 14 components, T² separated degraded cycles better than SPE.**
    *Measured:* near failure (validation engines, last 30 cycles) the sensors shift by
-   2.2–4.7 healthy standard deviations (e.g. T50 and Ps30 about 3.4). With the 95%-variance PCA
-   (12 of 14 components), T² separates degraded cycles (test AUROC 30–60: 0.854 single-cycle,
-   0.756 window) while SPE is close to chance (0.543 single-cycle, 0.588 window).
+   2.2–4.7 healthy standard deviations (e.g. T50 and Ps30 about 3.4). With the 95%-variance PCA,
+   test AUROC 30–60 was 0.854 (single-cycle) and 0.756 (window) for T², and 0.543 and 0.588
+   for SPE.
    *Interpretation:* keeping 12 of 14 components leaves a 2-dimensional residual, so SPE only
-   sees shifts in the two lowest-variance healthy directions. The component sweep (point 2)
-   suggests the signal lies mainly along the 2nd component instead.
-2. **Much of the degradation signal seems to lie along one principal direction.**
-   *Measured (validation sweep, 1–12 components):* T² is weakest with 1 component (AUROC 0.687),
-   best with 2 (0.962) and declines with every component added after that (0.948 with 3,
-   0.891 with 12). With 1 component, SPE does better than T² (0.847); once the 2nd component is
-   inside the model subspace, SPE drops to 0.579.
-3. **The LSTM autoencoder did not outperform the linear methods in this setting.**
+   sees shifts in the two lowest-variance healthy directions.
+2. **In the validation sweep, T² scored best with 2 components.**
+   *Measured (1–12 components, AUROC 30–60):* T² 0.687 with 1 component, 0.962 with 2, then lower
+   with each added component (0.948 with 3, 0.891 with 12). SPE 0.847 with 1 component and 0.579
+   with 2.
+   *Interpretation:* the shift near failure may lie mainly along the 2nd principal component of
+   healthy data; this was not tested directly.
+3. **The LSTM autoencoder scored below most single-cycle scores.**
    *Measured:* test AUROC 30–60 of 0.759 ± 0.012 over 3 seeds, close to window PCA T² (0.756),
-   above SPE (0.543) and below the other single-cycle scores (0.854–0.927).
-   *Interpretation:* consistent with point 1: a reconstruction-error score sees little of a
-   shift that lies inside the healthy subspace.
-4. **The validation-tuned gain was smaller on test.**
-   *Measured:* the 2-component T² led distance by 0.034 AUROC (30–60) on validation and by
-   0.009 on test, while keeping a lead in the 60–90 band (0.772 vs 0.689) and in median lead time
-   (71 vs 47 cycles).
-   *Interpretation:* consistent with selection bias from choosing the setting on 20 validation
-   engines.
-5. **Window-based scores raised more early alarms on test.**
-   *Measured:* engines alarming in their first 30 cycles, out of 100: window PCA T² 10,
-   rolling T² 5, rolling distance 2, LSTM autoencoder 4 / 1 / 0 (three seeds), single-cycle
-   models 0–2. These counts are small and their cause was not tested.
+   above SPE (0.543) and below distance, Isolation Forest and both single-cycle T² scores
+   (0.854–0.927).
+   *Interpretation:* consistent with point 1 if the shift lies mostly inside the healthy
+   subspace, which a reconstruction-error score sees little of.
+4. **The validation-tuned gain over distance was smaller on test.**
+   *Measured:* AUROC 30–60 difference between the 2-component T² and distance was 0.034 on
+   validation and 0.009 on test; AUROC 60–90 was 0.772 vs 0.689 and median lead time 71 vs 47
+   cycles on test. In mid-life both alarmed on 2 of 88 test engines, with 1.39 and 0.60 alarm
+   events per 1000 cycles.
+   *Interpretation:* the smaller test difference is consistent with selection bias from choosing
+   the setting on 20 validation engines.
+5. **Window PCA T², rolling T² and the LSTM autoencoder had the most false alarms on test.**
+   *Measured:* early alarms (out of 100 engines): window PCA T² 10, rolling T² 5, rolling
+   distance 2, LSTM autoencoder 4 / 1 / 0, single-cycle models 0–2. Engines with a mid-life false
+   alarm: window PCA T² 15.9%, LSTM autoencoder 13.6 / 8.0 / 6.8%, rolling T² 8.0%, rolling
+   distance 3.4%, window PCA SPE and single-cycle models 0–2.3%. The counts are small and their
+   cause was not tested.
+6. **Counting only alarms at RUL ≤ 125 shortened three median lead times.**
+   *Measured:* median lead, any alarm after cycle 30 → only alarms at RUL ≤ 125: window PCA T²
+   57.5 → 45 (detection 20 → 19 of 25), LSTM autoencoder 45.2 → 36.8 (mean over seeds), rolling
+   T² 74 → 71. The other models were unchanged.
+   *Interpretation:* for these three models, part of the earlier lead came from alarms at
+   RUL > 125; they also had the highest mid-life false-alarm rates (point 5).
 
 ## Limitations
 
 - Simulated data; one operating condition and one fault mode (FD001).
-- **Lead time is not bounded by degradation onset.** Any alarm after cycle 30 counts as a
-  detection, so alarms before degradation starts can lengthen lead times. In
-  `notebooks/03_base_checks.ipynb`, distance on validation has a lead-time upper quartile of
-  100.25 cycles with k = 1 and 65.5 with k = 3. `src/evaluate.py` also implements mid-life false
-  alarms (`fa_*`) and onset-bounded lead times; the committed tables use the earlier definitions
-  (`legacy_*` columns).
-- No confidence intervals: only 25 test engines end near failure, so AUROC differences around
-  0.01 should not be read as real differences.
+- RUL = 125 is a proxy for degradation onset, which varies by engine: an alarm counted as a
+  mid-life false alarm may come from an engine that started degrading earlier.
+- No confidence intervals: only 25 test engines end near failure and mid-life false-alarm rates
+  rest on a few engines, so differences of about 0.01 AUROC or one or two engines should not be
+  read as real differences.
 - No ground-truth anomaly labels: RUL bands and alarm timing are proxies.
 - Thresholds and k are estimated from 20 validation engines × 30 healthy cycles
   (× 21 windows for window-based models).
@@ -215,61 +229,42 @@ their interpretation.
 
 ## Roadmap
 
-### Part 2 – RAG diagnosis assistant (planned)
+### Part 2 – RAG diagnosis assistant (in progress)
 
-The assistant takes the detector's output as input, so detection and diagnosis form one
-pipeline. Detector: the 2-component T² (main result), saved with its scaler, threshold and k.
+The assistant takes the detector's output as input. Detector: the 2-component T², saved with its
+scaler, threshold and k (`src/detector.py`; rebuilding it must reproduce threshold 5.7303 and
+k = 3).
 
-1. **Deviation report.** For an alarmed engine, average the last 10 cycles up to the alarm,
-   rank sensors by their contribution to T² (contributions sum to the T² value), and report each
-   sensor's shift from the engine's own healthy window (first 30 cycles, known at alarm time),
-   e.g. "T50 (LPT outlet temperature) ↑ 3.4σ". Physical sensor descriptions from Table 2 are used
-   because maintenance documents do not use C-MAPSS mnemonics. Nc and NRc move in opposite
-   directions across engines near failure (`notebooks/02_features_analysis.ipynb`) and need care
-   when interpreted.
+1. **Deviation report.** For an alarmed engine, average the last 10 cycles up to the alarm, rank
+   sensors by their contribution to T² (contributions sum to the T² value), and report each
+   sensor's shift from the engine's own first 30 cycles, e.g. "T50 (LPT outlet temperature)
+   ↑ 3.4σ". Sensor descriptions from Table 2 are used so that queries contain the words of
+   maintenance documents rather than C-MAPSS mnemonics. Nc and NRc move in opposite directions
+   across engines near failure (`notebooks/02_features_analysis.ipynb`), which needs to be
+   checked in the reports.
 2. **Retrieval.** Index the FAA *Aviation Maintenance Technician Handbook – Powerplant*
    (FAA-H-8083-32B; turbine engine and maintenance chapters), chunked with page and section
-   metadata. Hybrid retrieval: BM25 for technical terms plus a small CPU embedding model,
-   combined by reciprocal rank fusion. The PDF is downloaded and checksum-verified by a script,
-   not committed.
-3. **Generation.** An LLM (Groq API) returns structured output: each proposed cause or check
-   cites a retrieved chunk id. Citations are validated against the retrieved set and unsupported
-   claims are dropped; with weak retrieval the assistant states that the evidence is
-   insufficient. Output is decision support; the maintenance engineer decides.
+   metadata. Hybrid retrieval: BM25 plus a small CPU embedding model, combined by reciprocal rank
+   fusion. The PDF is downloaded and checksum-verified by a script, not committed.
+3. **Generation.** An LLM (Groq API) returns structured output in which each proposed cause or
+   check cites a retrieved chunk id. Citations not in the retrieved set are dropped; when
+   retrieval finds no supporting passage, the output states that the evidence is insufficient.
+   The output is decision support for a maintenance engineer.
 4. **Evaluation.**
    - Retrieval: recall@k and MRR on a hand-labelled query set.
    - Faithfulness: whether each claim is supported by the passage it cites (LLM judge, checked
-     against a manually audited sample). A citation being present is not enough.
-   - Value of retrieval: comparison with the same LLM without retrieved context.
-   - Coarse diagnostic check: FD001 has one known fault mode (HPC degradation), so top-ranked
-     causes can be checked against it. Engine-level fault labels are not provided (e.g. in
-     FD003), so finer diagnostic correctness cannot be scored.
-   - Trigger load: every alarm requests a diagnosis, so the detector's mid-life false-alarm rate
-     (`fa_per_1000`, measured on validation) is how often the assistant runs on a healthy engine.
-     Reports from such alarms are used to check that it states the evidence is insufficient.
+     against a manually reviewed sample).
+   - Retrieval vs no retrieval: the same LLM without retrieved context.
+   - Fault mode: FD001 has one known fault mode (HPC degradation), so the top-ranked cause can be
+     checked against it. Engine-level fault labels are not provided, so finer diagnostic
+     correctness cannot be scored.
+   - Alarms in mid-life: the detector had 1.33 (validation) and 1.39 (test) alarm events per 1000
+     mid-life cycles. Reports from these alarms are used to check the "evidence is insufficient"
+     output.
 
-   On FD001, every engine has the same fault mode, so deviation reports will be similar across
-   engines; discriminating between causes needs FD003 (HPC and fan degradation).
-
-Checklist:
-
-- [ ] Saved detector (scaler, T², threshold, k)
-- [ ] Deviation report with T² contributions (`src/deviation.py`)
-- [ ] Sensor descriptions for queries
-- [ ] Handbook download, ingestion and chunking with page metadata
-- [ ] Hybrid retrieval
-- [ ] Generation with validated citations
-- [ ] Evaluation and example outputs in this README
-
-### Later
-
-- Regenerate the result tables with mid-life false alarms and onset-bounded lead times, with
-  engine-level bootstrap confidence intervals.
-- Hotelling T² on the autoencoder's latent representation.
-- Per-engine baselines, motivated by the between-engine variance.
-- Healthy-window sensitivity (20 and 50 cycles).
-- FD003 (two fault modes, where diagnosis has a real choice to make) and FD004 (six operating
-  conditions, condition-wise normalization).
+   In FD001 every engine has the same fault mode, so deviation reports are expected to be
+   similar across engines; comparing causes would need a subset with more than one fault mode,
+   such as FD003.
 
 ## Setup and reproduction
 
@@ -282,13 +277,10 @@ python scripts/smoke_test.py            # environment check
 python -m src.data                      # download + verify C-MAPSS, write FD001 parquet
 python -m src.split                     # engine-level fit/val split (results/splits/)
 python -m src.run_baselines             # all models on validation
-python -m src.run_baselines FD001 test  # test run (done once; do not re-run)
+python -m src.run_baselines FD001 test  # test set, with the choices frozen on validation
+python -m src.detector                  # save the Part 2 detector (results/models/)
 python -m pytest -q                     # unit tests
 ```
-
-Re-running `src.run_baselines` now writes tables with the current metric definitions
-(onset-bounded detection and lead, mid-life false alarms, `legacy_*` columns), which differ from
-the committed tables.
 
 ## Repository structure
 
@@ -303,10 +295,11 @@ the committed tables.
 │   ├── baselines.py      # distance, PCA SPE and T², Isolation Forest
 │   ├── lstm_ae.py        # LSTM autoencoder with early stopping
 │   ├── evaluate.py       # threshold, k-consecutive alarms, detection, false alarms, AUROC
-│   └── run_baselines.py  # runs every model on val or test
+│   ├── run_baselines.py  # runs every model on val or test
+│   └── detector.py       # saved 2-component T² detector for Part 2
 ├── notebooks/            # EDA, feature diagnostics, component sweep
 ├── scripts/smoke_test.py
-├── tests/                # unit tests (alarm logic and metrics, windows, models, split, features)
+├── tests/                # unit tests (alarm logic and metrics, windows, models, split, features, detector)
 ├── results/              # split file and result tables
 └── docs/maintenance/     # documents for the RAG index (empty until Part 2)
 ```

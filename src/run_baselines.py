@@ -1,7 +1,7 @@
 """Fit every model on healthy fit cycles and evaluate.
 
 python -m src.run_baselines            # FD001, val only (development)
-python -m src.run_baselines FD001 test # final run on the locked test set: do this once
+python -m src.run_baselines FD001 test # final run on the locked test set
 """
 
 import sys
