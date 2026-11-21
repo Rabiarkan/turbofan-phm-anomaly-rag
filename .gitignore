@@ -224,3 +224,7 @@ data/processed/*
 !data/**/.gitkeep
 results/models/
 *.pt
+
+# docs
+docs/maintenance/*
+!docs/maintenance/.gitkeep
